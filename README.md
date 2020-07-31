@@ -2,7 +2,7 @@
 
 **Pre-conditions**
 
-Start Kibana with basic license, load sample data
+Start Kibana with basic license
 
 **How to run simulation**
 ```
