@@ -1,4 +1,4 @@
-# Kibana loading testing project
+# Kibana APIs load testing project
 
 **Pre-conditions**
 
