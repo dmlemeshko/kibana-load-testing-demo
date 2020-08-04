@@ -11,15 +11,11 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.http.entity.StringEntity
 
+import org.kibanaLoadTest.AppConfig
+
 class DemoJourney extends Simulation {
-  val baseUrl = "http://localhost:5620"
-  val buildVersion = "8.0.0"
-  val loginPayload = """{"username":"elastic","password":"changeme"}"""
-
-  val isSecurityEnabled = true
-
   val httpProtocol = http
-    .baseUrl(baseUrl)
+    .baseUrl(AppConfig.baseUrl)
     .inferHtmlResources(BlackList(""".*\.js""", """.*\.css""", """.*\.gif""", """.*\.jpeg""", """.*\.jpg""", """.*\.ico""", """.*\.woff""", """.*\.woff2""", """.*\.(t|o)tf""", """.*\.png""", """.*detectportal\.firefox\.com.*"""), WhiteList())
     .acceptHeader("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
     .acceptEncodingHeader("gzip, deflate")
@@ -29,10 +25,10 @@ class DemoJourney extends Simulation {
 
   var defaultHeaders = Map(
     "Connection" -> "keep-alive",
-    "kbn-version" -> buildVersion,
+    "kbn-version" -> AppConfig.buildVersion,
     "Content-Type" -> "application/json",
     "Accept" -> "*/*",
-    "Origin" -> baseUrl,
+    "Origin" -> AppConfig.baseUrl,
     "Sec-Fetch-Site" -> "same-origin",
     "Sec-Fetch-Mode" -> "cors",
     "Sec-Fetch-Dest" -> "empty"
@@ -45,20 +41,21 @@ class DemoJourney extends Simulation {
     "kbn-xsrf" -> "xsrf"
   )
 
-  if (isSecurityEnabled) {
+  if (AppConfig.isSecurityEnabled) {
     defaultHeaders += ("Cookie" -> "${Cookie}")
     defaultTextHeaders += ("Cookie" -> "${Cookie}")
   }
 
   val scn = scenario("Discover & Dashboard Journey")
-    .doIf(isSecurityEnabled) {
+    .doIf(AppConfig.isSecurityEnabled) {
       exec(http("login")
         .post("/internal/security/login")
         .headers(loginHeaders)
-        .body(StringBody(loginPayload)).asJson
+        .body(StringBody(AppConfig.loginPayload)).asJson
         .check(headerRegex("set-cookie", ".+?(?=;)").saveAs("Cookie"))
         .check(status.is(204)))
     }
+    .exitHereIfFailed
     .pause(5)
     .exec(http("visit Home")
       .get("/app/home")
@@ -70,7 +67,7 @@ class DemoJourney extends Simulation {
     .exec(http("default Discover query")
       .post("/internal/search/es")
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/discover")
+      .header("Referer", AppConfig.baseUrl + "/app/discover")
       .body(ElFileBody("data/discoverPayload.json")).asJson)
     .pause(5)
     .exec(http("visit Dashboards")
@@ -82,7 +79,7 @@ class DemoJourney extends Simulation {
       .queryParam("per_page", "10000")
       .queryParam("type", "index-pattern")
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards")
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
       .check(jsonPath("$.saved_objects[?(@.type=='index-pattern')].id").saveAs("indexPatternId")))
     .exec(http("query dashboard list")
       .get("/api/saved_objects/_find")
@@ -93,7 +90,7 @@ class DemoJourney extends Simulation {
       .queryParam("search_fields", "description")
       .queryParam("type", "dashboard")
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards")
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
       .check(jsonPath("$.saved_objects[:1].id").saveAs("dashboardId")))
     .pause(5)
     .exec(http("query panels list")
@@ -109,7 +106,7 @@ class DemoJourney extends Simulation {
         """
       )).asJson
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards")
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
       .check(
         jsonPath("$.saved_objects[0].references[?(@.type=='visualization')]")
           .findAll
@@ -133,33 +130,33 @@ class DemoJourney extends Simulation {
         "${vizListString}"
           .concat(", { \"id\":\"${indexPatternId}\", \"type\":\"index-pattern\"  }]"))).asJson
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards"))
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
     .exec(http("query search & map")
       .post("/api/saved_objects/_bulk_get")
       .body(StringBody(
         """[ ${searchAndMapString} ]""".stripMargin)).asJson
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards"))
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
     .exec(http("query timeseries data")
       .post("/api/metrics/vis/data")
       .body(ElFileBody("data/timeSeriesPayload.json")).asJson
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards"))
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
     .exec(http("query gauge data")
       .post("/api/metrics/vis/data")
       .body(ElFileBody("data/gaugePayload.json")).asJson
       .headers(defaultHeaders)
-      .header("Referer", baseUrl + "/app/dashboards"))
+      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
 
 
   before {
     // load sample data
     val httpClient = HttpClientBuilder.create.build
 
-    if (isSecurityEnabled) {
-      val loginRequest = new HttpPost(baseUrl + "/internal/security/login")
+    if (AppConfig.isSecurityEnabled) {
+      val loginRequest = new HttpPost(AppConfig.baseUrl + "/internal/security/login")
       loginHeaders foreach {case (key, value) => loginRequest.addHeader(key, value)}
-      loginRequest.setEntity(new StringEntity(loginPayload))
+      loginRequest.setEntity(new StringEntity(AppConfig.loginPayload))
       val loginResponse = httpClient.execute(loginRequest)
 
       if (loginResponse.getStatusLine.getStatusCode != 204) {
@@ -167,9 +164,9 @@ class DemoJourney extends Simulation {
       }
     }
 
-    val sampleDataRequest = new HttpPost(baseUrl + "/api/sample_data/ecommerce")
+    val sampleDataRequest = new HttpPost(AppConfig.baseUrl + "/api/sample_data/ecommerce")
     sampleDataRequest.addHeader("Connection", "keep-alive")
-    sampleDataRequest.addHeader("kbn-version", buildVersion)
+    sampleDataRequest.addHeader("kbn-version", AppConfig.buildVersion)
 
     val sampleDataResponse = httpClient.execute(sampleDataRequest)
 
