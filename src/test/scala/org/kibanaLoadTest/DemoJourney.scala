@@ -9,9 +9,10 @@ import java.util.Calendar
 
 class DemoJourney extends Simulation {
 
-  val appConfig = new KibanaConfiguration("config/cloud.conf")
+  val env = Option(System.getenv("env")).getOrElse("local")
 
-  println("Running simulation against Kibana")
+  println(s"Running Kibana ${env} config")
+  val appConfig = new KibanaConfiguration(s"config/${env}.conf")
   println(appConfig.baseUrl)
   println(appConfig.buildVersion)
   println(appConfig.isSecurityEnabled)
@@ -193,7 +194,7 @@ class DemoJourney extends Simulation {
 
   before {
     // load sample data
-    new HttpHelper(appConfig.baseUrl, appConfig.isSecurityEnabled, appConfig.loginPayload, appConfig.buildVersion)
+    new HttpHelper(appConfig)
       .loginIfNeeded()
       .addSampleData("ecommerce")
       .closeConnection()
@@ -201,7 +202,7 @@ class DemoJourney extends Simulation {
 
   after {
     // remove sample data
-    new HttpHelper(appConfig.baseUrl, appConfig.isSecurityEnabled, appConfig.loginPayload, appConfig.buildVersion)
+    new HttpHelper(appConfig)
       .loginIfNeeded()
       .removeSampleData("ecommerce")
       .closeConnection()

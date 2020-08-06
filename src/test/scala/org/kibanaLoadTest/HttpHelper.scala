@@ -4,7 +4,7 @@ import org.apache.http.client.methods.{HttpDelete, HttpPost}
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
 
-class HttpHelper(baseUrl: String, isSecurityEnabled: Boolean, loginPayload: String, buildVersion: String){
+class HttpHelper(appConfig: KibanaConfiguration){
 
   private val httpClient = HttpClientBuilder.create.build
 
@@ -14,10 +14,10 @@ class HttpHelper(baseUrl: String, isSecurityEnabled: Boolean, loginPayload: Stri
   )
 
   def loginIfNeeded(): HttpHelper = {
-    if (isSecurityEnabled) {
-      val loginRequest = new HttpPost(baseUrl + "/internal/security/login")
+    if (appConfig.isSecurityEnabled) {
+      val loginRequest = new HttpPost(appConfig.baseUrl + "/internal/security/login")
       loginHeaders foreach {case (key, value) => loginRequest.addHeader(key, value)}
-      loginRequest.setEntity(new StringEntity(loginPayload))
+      loginRequest.setEntity(new StringEntity(appConfig.loginPayload))
       val loginResponse = httpClient.execute(loginRequest)
 
       if (loginResponse.getStatusLine.getStatusCode != 204) {
@@ -28,9 +28,9 @@ class HttpHelper(baseUrl: String, isSecurityEnabled: Boolean, loginPayload: Stri
   }
 
   def removeSampleData(data: String): HttpHelper = {
-    val sampleDataRequest = new HttpDelete(baseUrl + s"/api/sample_data/${data}")
+    val sampleDataRequest = new HttpDelete(appConfig.baseUrl + s"/api/sample_data/${data}")
     sampleDataRequest.addHeader("Connection", "keep-alive")
-    sampleDataRequest.addHeader("kbn-version", buildVersion)
+    sampleDataRequest.addHeader("kbn-version", appConfig.buildVersion)
 
     val sampleDataResponse = httpClient.execute(sampleDataRequest)
 
@@ -41,9 +41,9 @@ class HttpHelper(baseUrl: String, isSecurityEnabled: Boolean, loginPayload: Stri
   }
 
   def addSampleData(data: String): HttpHelper = {
-    val sampleDataRequest = new HttpPost(baseUrl + s"/api/sample_data/${data}")
+    val sampleDataRequest = new HttpPost(appConfig.baseUrl + s"/api/sample_data/${data}")
     sampleDataRequest.addHeader("Connection", "keep-alive")
-    sampleDataRequest.addHeader("kbn-version", buildVersion)
+    sampleDataRequest.addHeader("kbn-version", appConfig.buildVersion)
 
     val sampleDataResponse = httpClient.execute(sampleDataRequest)
 
