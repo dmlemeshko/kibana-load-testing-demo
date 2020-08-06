@@ -28,3 +28,6 @@ test-output
 
 # project files to ignore
 !/results/.gitkeep
+
+# kibana cloud config
+src/test/resources/config/cloud.conf

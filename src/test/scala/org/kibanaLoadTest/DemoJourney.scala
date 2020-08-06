@@ -2,20 +2,37 @@ package com.kibanaTest
 
 import io.gatling.core.Predef._
 import io.gatling.http.Predef._
-import org.apache.http.client.methods.HttpPost
 
 import scala.concurrent.duration.DurationInt
-import org.apache.http.impl.client.HttpClientBuilder
-import org.apache.http.util.EntityUtils
-import java.nio.charset.StandardCharsets
-
-import org.apache.http.entity.StringEntity
-
-import org.kibanaLoadTest.AppConfig
+import org.kibanaLoadTest.{Helper, HttpHelper, KibanaConfiguration}
+import java.util.Calendar
 
 class DemoJourney extends Simulation {
+
+  val appConfig = new KibanaConfiguration("config/cloud.conf")
+
+  println("Running simulation against Kibana")
+  println(appConfig.baseUrl)
+  println(appConfig.buildVersion)
+  println(appConfig.isSecurityEnabled)
+  println(appConfig.loginPayload)
+
+  val discoverPayload = Helper.loadJsonString("data/discoverPayload.json")
+  val discoverPayloadQ1 = discoverPayload
+    .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -1))
+    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 0))
+
+  val discoverPayloadQ2 = discoverPayload
+    .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -14))
+    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 14))
+
+  val discoverPayloadQ3 = discoverPayload
+    .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -1000))
+    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 0))
+
+
   val httpProtocol = http
-    .baseUrl(AppConfig.baseUrl)
+    .baseUrl(appConfig.baseUrl)
     .inferHtmlResources(BlackList(""".*\.js""", """.*\.css""", """.*\.gif""", """.*\.jpeg""", """.*\.jpg""", """.*\.ico""", """.*\.woff""", """.*\.woff2""", """.*\.(t|o)tf""", """.*\.png""", """.*detectportal\.firefox\.com.*"""), WhiteList())
     .acceptHeader("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
     .acceptEncodingHeader("gzip, deflate")
@@ -25,10 +42,10 @@ class DemoJourney extends Simulation {
 
   var defaultHeaders = Map(
     "Connection" -> "keep-alive",
-    "kbn-version" -> AppConfig.buildVersion,
+    "kbn-version" -> appConfig.buildVersion,
     "Content-Type" -> "application/json",
     "Accept" -> "*/*",
-    "Origin" -> AppConfig.baseUrl,
+    "Origin" -> appConfig.baseUrl,
     "Sec-Fetch-Site" -> "same-origin",
     "Sec-Fetch-Mode" -> "cors",
     "Sec-Fetch-Dest" -> "empty"
@@ -41,62 +58,82 @@ class DemoJourney extends Simulation {
     "kbn-xsrf" -> "xsrf"
   )
 
-  if (AppConfig.isSecurityEnabled) {
+  if (appConfig.isSecurityEnabled) {
     defaultHeaders += ("Cookie" -> "${Cookie}")
     defaultTextHeaders += ("Cookie" -> "${Cookie}")
   }
 
   val scn = scenario("Discover & Dashboard Journey")
-    .doIf(AppConfig.isSecurityEnabled) {
+    .doIf(appConfig.isSecurityEnabled) {
       exec(http("login")
         .post("/internal/security/login")
         .headers(loginHeaders)
-        .body(StringBody(AppConfig.loginPayload)).asJson
+        .body(StringBody(appConfig.loginPayload)).asJson
         .check(headerRegex("set-cookie", ".+?(?=;)").saveAs("Cookie"))
         .check(status.is(204)))
     }
     .exitHereIfFailed
-    .pause(5)
     .exec(http("visit Home")
       .get("/app/home")
-      .headers(defaultTextHeaders))
-    .pause(5)
+      .headers(defaultTextHeaders)
+      .check(status.is(200)))
+    .pause(5 seconds)
     .exec(http("visit Discover")
       .get("/app/discover")
-      .headers(defaultTextHeaders))
-    .exec(http("default Discover query")
+      .headers(defaultTextHeaders)
+      .check(status.is(200)))
+    .exec(http("Discover query 1")
       .post("/internal/search/es")
       .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/discover")
-      .body(ElFileBody("data/discoverPayload.json")).asJson)
-    .pause(5)
+      .header("Referer", appConfig.baseUrl + "/app/discover")
+        .body(StringBody(discoverPayloadQ1)).asJson
+      .check(status.is(200)))
+    .pause(5 seconds)
+    .exec(http("Discover query 2")
+      .post("/internal/search/es")
+      .headers(defaultHeaders)
+      .header("Referer", appConfig.baseUrl + "/app/discover")
+      .body(StringBody(discoverPayloadQ2)).asJson
+      .check(status.is(200)))
+    .pause(5 seconds)
+    .exec(http("Discover query 3")
+      .post("/internal/search/es")
+      .headers(defaultHeaders)
+      .header("Referer", appConfig.baseUrl + "/app/discover")
+      .body(StringBody(discoverPayloadQ3)).asJson
+      .check(status.is(200)))
+    .pause(5 seconds)
     .exec(http("visit Dashboards")
       .get("/app/dashboards")
-      .headers(defaultTextHeaders))
+      .headers(defaultTextHeaders)
+      .check(status.is(200)))
     .exec(http("query indexPattern")
       .get("/api/saved_objects/_find")
       .queryParam("fields", "title")
       .queryParam("per_page", "10000")
       .queryParam("type", "index-pattern")
       .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
+      .header("Referer", appConfig.baseUrl + "/app/dashboards")
+      .check(status.is(200))
       .check(jsonPath("$.saved_objects[?(@.type=='index-pattern')].id").saveAs("indexPatternId")))
-    .exec(http("query dashboard list")
-      .get("/api/saved_objects/_find")
-      .queryParam("default_search_operator", "AND")
-      .queryParam("page", "1")
-      .queryParam("per_page", "1000")
-      .queryParam("search_fields", "title%5E3")
-      .queryParam("search_fields", "description")
-      .queryParam("type", "dashboard")
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
-      .check(jsonPath("$.saved_objects[:1].id").saveAs("dashboardId")))
-    .pause(5)
-    .exec(http("query panels list")
-      .post("/api/saved_objects/_bulk_get")
-      .body(StringBody(
-        """
+      .exitBlockOnFail {
+        exec(http("query dashboard list")
+          .get("/api/saved_objects/_find")
+          .queryParam("default_search_operator", "AND")
+          .queryParam("page", "1")
+          .queryParam("per_page", "1000")
+          .queryParam("search_fields", "title%5E3")
+          .queryParam("search_fields", "description")
+          .queryParam("type", "dashboard")
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(jsonPath("$.saved_objects[:1].id").saveAs("dashboardId"))
+          .check(status.is(200)))
+          .pause(2 seconds)
+          .exec(http("query panels list")
+            .post("/api/saved_objects/_bulk_get")
+            .body(StringBody(
+              """
           [
             {
               "id":"${dashboardId}",
@@ -104,89 +141,79 @@ class DemoJourney extends Simulation {
             }
           ]
         """
-      )).asJson
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards")
-      .check(
-        jsonPath("$.saved_objects[0].references[?(@.type=='visualization')]")
-          .findAll
-          .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
-          .saveAs("vizVector"))
-      .check(
-        jsonPath("$.saved_objects[0].references[?(@.type=='map' || @.type=='search')]")
-          .findAll
-          .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
-          .saveAs("searchAndMapVector")))
-    .exec(session =>
-      //convert Vector -> String
-      session.set("vizListString", session("vizVector").as[Seq[String]].mkString(",")))
-    .exec(session => {
-      //convert Vector -> String
-      session.set("searchAndMapString", session("searchAndMapVector").as[Seq[String]].mkString(","))
-    })
-    .exec(http("query visualizations")
-      .post("/api/saved_objects/_bulk_get")
-      .body(StringBody("[" +
-        "${vizListString}"
-          .concat(", { \"id\":\"${indexPatternId}\", \"type\":\"index-pattern\"  }]"))).asJson
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
-    .exec(http("query search & map")
-      .post("/api/saved_objects/_bulk_get")
-      .body(StringBody(
-        """[ ${searchAndMapString} ]""".stripMargin)).asJson
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
-    .exec(http("query timeseries data")
-      .post("/api/metrics/vis/data")
-      .body(ElFileBody("data/timeSeriesPayload.json")).asJson
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
-    .exec(http("query gauge data")
-      .post("/api/metrics/vis/data")
-      .body(ElFileBody("data/gaugePayload.json")).asJson
-      .headers(defaultHeaders)
-      .header("Referer", AppConfig.baseUrl + "/app/dashboards"))
-
+            )).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/dashboards")
+            .check(
+              jsonPath("$.saved_objects[0].references[?(@.type=='visualization')]")
+                .findAll
+                .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
+                .saveAs("vizVector"))
+            .check(
+              jsonPath("$.saved_objects[0].references[?(@.type=='map' || @.type=='search')]")
+                .findAll
+                .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
+                .saveAs("searchAndMapVector"))
+            .check(status.is(200)))
+          .exec(session =>
+            //convert Vector -> String
+            session.set("vizListString", session("vizVector").as[Seq[String]].mkString(",")))
+          .exec(session => {
+            //convert Vector -> String
+            session.set("searchAndMapString", session("searchAndMapVector").as[Seq[String]].mkString(","))
+          })
+          .exec(http("query visualizations")
+            .post("/api/saved_objects/_bulk_get")
+            .body(StringBody("[" +
+              "${vizListString}"
+                .concat(", { \"id\":\"${indexPatternId}\", \"type\":\"index-pattern\"  }]"))).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/dashboards")
+            .check(status.is(200)))
+          .exec(http("query search & map")
+            .post("/api/saved_objects/_bulk_get")
+            .body(StringBody(
+              """[ ${searchAndMapString} ]""".stripMargin)).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/dashboards")
+            .check(status.is(200)))
+          .exec(http("query timeseries data")
+            .post("/api/metrics/vis/data")
+            .body(ElFileBody("data/timeSeriesPayload.json")).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/dashboards")
+            .check(status.is(200)))
+          .exec(http("query gauge data")
+            .post("/api/metrics/vis/data")
+            .body(ElFileBody("data/gaugePayload.json")).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/dashboards")
+            .check(status.is(200)))
+      }
 
   before {
     // load sample data
-    val httpClient = HttpClientBuilder.create.build
+    new HttpHelper(appConfig.baseUrl, appConfig.isSecurityEnabled, appConfig.loginPayload, appConfig.buildVersion)
+      .loginIfNeeded()
+      .addSampleData("ecommerce")
+      .closeConnection()
+  }
 
-    if (AppConfig.isSecurityEnabled) {
-      val loginRequest = new HttpPost(AppConfig.baseUrl + "/internal/security/login")
-      loginHeaders foreach {case (key, value) => loginRequest.addHeader(key, value)}
-      loginRequest.setEntity(new StringEntity(AppConfig.loginPayload))
-      val loginResponse = httpClient.execute(loginRequest)
-
-      if (loginResponse.getStatusLine.getStatusCode != 204) {
-        throw new RuntimeException("Login to Kibana failed")
-      }
-    }
-
-    val sampleDataRequest = new HttpPost(AppConfig.baseUrl + "/api/sample_data/ecommerce")
-    sampleDataRequest.addHeader("Connection", "keep-alive")
-    sampleDataRequest.addHeader("kbn-version", AppConfig.buildVersion)
-
-    val sampleDataResponse = httpClient.execute(sampleDataRequest)
-
-    if (sampleDataResponse.getStatusLine.getStatusCode != 200) {
-      throw new RuntimeException("Loading sample data failed")
-    }
-
-    println("Response body: " + EntityUtils.toString(sampleDataResponse.getEntity, StandardCharsets.UTF_8))
-
-    // close connection
-    httpClient.close()
+  after {
+    // remove sample data
+    new HttpHelper(appConfig.baseUrl, appConfig.isSecurityEnabled, appConfig.loginPayload, appConfig.buildVersion)
+      .loginIfNeeded()
+      .removeSampleData("ecommerce")
+      .closeConnection()
   }
 
   setUp(
     scn.inject(
       nothingFor(5 seconds),
-      atOnceUsers(20),
-      rampUsers(10) during (5 seconds),
-      constantUsersPerSec(15) during (20 seconds),
+      atOnceUsers(10),
+      rampUsers(30) during (15 seconds),
+      constantUsersPerSec(10) during (30 seconds),
       rampUsersPerSec(5) to 10 during (1 minutes)
     ).protocols(httpProtocol)
-  )
+  ).maxDuration(10 minutes)
 }
