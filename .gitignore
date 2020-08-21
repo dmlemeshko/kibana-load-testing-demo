@@ -30,4 +30,7 @@ test-output
 !/results/.gitkeep
 
 # kibana cloud config
-src/test/resources/config/*
+src/test/resources/config/**
+
+#
+java_pid*.hprof
