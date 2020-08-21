@@ -30,4 +30,4 @@ test-output
 !/results/.gitkeep
 
 # kibana cloud config
-src/test/resources/config/cloud.conf
+src/test/resources/config/*

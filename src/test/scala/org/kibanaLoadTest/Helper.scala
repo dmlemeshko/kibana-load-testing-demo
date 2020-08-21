@@ -24,7 +24,7 @@ object Helper {
   }
 
   def loadKibanaConfig(configName: String): Object = {
-    val is = getClass.getClassLoader.getResourceAsStream("config/cloud.conf")
+    val is = getClass.getClassLoader.getResourceAsStream(configName)
     val source = scala.io.Source.fromInputStream(is).mkString
     val config = ConfigFactory.parseString(source)
 

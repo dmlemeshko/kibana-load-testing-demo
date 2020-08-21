@@ -25,12 +25,11 @@ class DemoJourney extends Simulation {
 
   val discoverPayloadQ2 = discoverPayload
     .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -14))
-    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 14))
+    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -5))
 
   val discoverPayloadQ3 = discoverPayload
-    .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -1000))
-    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 0))
-
+    .replaceAll("(?<=\"gte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, -20))
+    .replaceAll("(?<=\"lte\":\")(.*)(?=\",)", Helper.getDate(Calendar.DAY_OF_MONTH, 20))
 
   val httpProtocol = http
     .baseUrl(appConfig.baseUrl)
@@ -64,7 +63,7 @@ class DemoJourney extends Simulation {
     defaultTextHeaders += ("Cookie" -> "${Cookie}")
   }
 
-  val scn = scenario("Discover & Dashboard Journey")
+  val scn = scenario(s"Kibana ${appConfig.buildVersion} ${env}")
     .doIf(appConfig.isSecurityEnabled) {
       exec(http("login")
         .post("/internal/security/login")
@@ -74,6 +73,21 @@ class DemoJourney extends Simulation {
         .check(status.is(204)))
     }
     .exitHereIfFailed
+    .exec(http("get bootstrap.js")
+      .get("/bundles/app/kibana/bootstrap.js")
+      .header("Cookie", "${Cookie}")
+      .header("if-none-match", "06cae6ce1935b763b9d86ecb9a6392dc1a6d5e5d-gzip")
+      .header("sec-fetch-dest", "script")
+      .header("sec-fetch-mode", "no-cors")
+      .header("sec-fetch-site", "same-origin")
+      .header("referer",  appConfig.baseUrl + "/app/kibana")
+      .check(regex("\\/(.*)',").findAll.saveAs("bundlesList")))
+      .pause(2 seconds)
+      .foreach("${bundlesList}", "bundle") {
+        exec(http("downloading bundle")
+          .get("/" + "${bundle}")
+          .header("Referer", appConfig.baseUrl +  "/app/kibana"))
+      }
     .exec(http("visit Home")
       .get("/app/home")
       .headers(defaultTextHeaders)
@@ -103,7 +117,7 @@ class DemoJourney extends Simulation {
       .header("Referer", appConfig.baseUrl + "/app/discover")
       .body(StringBody(discoverPayloadQ3)).asJson
       .check(status.is(200)))
-    .pause(5 seconds)
+    .pause(10 seconds)
     .exec(http("visit Dashboards")
       .get("/app/dashboards")
       .headers(defaultTextHeaders)
@@ -191,6 +205,54 @@ class DemoJourney extends Simulation {
             .header("Referer", appConfig.baseUrl + "/app/dashboards")
             .check(status.is(200)))
       }
+//    .pause(10 seconds)
+//    .exec(http("canvas workpads")
+//      .get("/api/canvas/workpad/find")
+//      .queryParam("name", "")
+//      .queryParam("perPage", "10000")
+//      .headers(defaultHeaders)
+//      .header("Referer", appConfig.baseUrl + "/app/canvas")
+//      .check(status.is(200))
+//      .check()
+//      .check(jsonPath("$.workpads[0].id").saveAs("workpadId")))
+//    .exitBlockOnFail {
+//      exec(http("interpreter demo")
+//        .get("/api/interpreter/fns")
+//        .queryParam("name", "")
+//        .queryParam("perPage", "10000")
+//        .headers(defaultHeaders)
+//        .header("Referer", appConfig.baseUrl + "/app/canvas")
+//        .check(status.is(200)))
+//      .pause(5 seconds)
+//      .exec(http("load workpad")
+//        .get("/api/canvas/workpad/${workpadId}")
+//        .headers(defaultHeaders)
+//        .header("Referer", appConfig.baseUrl + "/app/canvas")
+//        .header("kbn-xsrf", "professionally-crafted-string-of-text")
+//        .check(status.is(200)))
+//        .pause(1 seconds)
+//        .exec(http("query canvas timelion")
+//          .post("/api/timelion/run")
+//          .body(ElFileBody("data/canvasTimelionPayload.json")).asJson
+//          .headers(defaultHeaders)
+//          .header("Referer", appConfig.baseUrl + "/app/canvas")
+//          .header("kbn-xsrf", "professionally-crafted-string-of-text")
+//          .check(status.is(200)))
+//        .pause(1 seconds)
+//        .exec(http("query canvas aggs 1")
+//          .post("/api/interpreter/fns")
+//          .body(ElFileBody("data/canvasInterpreterPayload1.json")).asJson
+//          .headers(defaultHeaders)
+//          .header("Referer", appConfig.baseUrl + "/app/canvas")
+//          .check(status.is(200)))
+//        .pause(1 seconds)
+//        .exec(http("query canvas aggs 2")
+//          .post("/api/interpreter/fns")
+//          .body(ElFileBody("data/canvasInterpreterPayload2.json")).asJson
+//          .headers(defaultHeaders)
+//          .header("Referer", appConfig.baseUrl + "/app/canvas")
+//          .check(status.is(200)))
+//    }
 
   before {
     // load sample data
@@ -202,19 +264,26 @@ class DemoJourney extends Simulation {
 
   after {
     // remove sample data
-    new HttpHelper(appConfig)
-      .loginIfNeeded()
-      .removeSampleData("ecommerce")
-      .closeConnection()
+    try {
+      new HttpHelper(appConfig)
+        .loginIfNeeded()
+        .removeSampleData("ecommerce")
+        .closeConnection()
+    } catch {
+      case e: java.lang.RuntimeException => println(s"Can't remove sample data\n ${e.printStackTrace()}" )
+    }
   }
 
+  // setup 1
   setUp(
     scn.inject(
-      nothingFor(5 seconds),
-      atOnceUsers(10),
-      rampUsers(30) during (15 seconds),
-      constantUsersPerSec(10) during (30 seconds),
-      rampUsersPerSec(5) to 10 during (1 minutes)
+      constantConcurrentUsers(20) during (3 minute), // 1
+      rampConcurrentUsers(20) to (50) during (3 minute) // 2
     ).protocols(httpProtocol)
-  ).maxDuration(10 minutes)
+  ).maxDuration(15 minutes)
+
+  // generate a closed workload injection profile
+  // with levels of 10, 15, 20, 25 and 30 concurrent users
+  // each level lasting 10 seconds
+  // separated by linear ramps lasting 10 seconds
 }
