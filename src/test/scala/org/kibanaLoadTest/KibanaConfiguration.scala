@@ -7,10 +7,10 @@ class KibanaConfiguration {
   var baseUrl = ""
   var buildVersion = ""
   var isSecurityEnabled = true
-  var login = ""
+  var username = ""
   var password = ""
   var loginPayload = ""
-
+  var loginStatusCode = 200
 
   def this(configName: String) {
     this()
@@ -20,9 +20,12 @@ class KibanaConfiguration {
     this.baseUrl = Option(System.getenv("host")).getOrElse(config.getString("app.host"))
     this.buildVersion = Option(System.getenv("version")).getOrElse(config.getString("app.version"))
     this.isSecurityEnabled = config.getBoolean("security.on")
-    this.login = Option(System.getenv("login")).getOrElse(config.getString("auth.login"))
+    this.username = Option(System.getenv("username")).getOrElse(config.getString("auth.username"))
     this.password = Option(System.getenv("password")).getOrElse(config.getString("auth.password"))
-    this.loginPayload = s"""{"username":"${this.login}","password":"${this.password}"}"""
-}
+    val newLoginPayload = s"""{"providerType":"${config.getString("auth.providerType")}","providerName":"${config.getString("auth.providerName")}","currentURL":"${this.baseUrl}/login","params":{"username":"${this.username}","password":"${this.password}"}}"""
+    val oldLoginPayload = s"""{"username":"${this.username}","password":"${this.password}"}"""
+    this.loginPayload = if (new Version(this.buildVersion).isAbove79x) newLoginPayload else oldLoginPayload
+    this.loginStatusCode = if (new Version(this.buildVersion).isAbove79x)  200 else 204
 
+  }
 }

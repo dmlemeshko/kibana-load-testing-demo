@@ -20,7 +20,7 @@ class HttpHelper(appConfig: KibanaConfiguration){
       loginRequest.setEntity(new StringEntity(appConfig.loginPayload))
       val loginResponse = httpClient.execute(loginRequest)
 
-      if (loginResponse.getStatusLine.getStatusCode != 204) {
+      if (loginResponse.getStatusLine.getStatusCode != appConfig.loginStatusCode) {
         throw new RuntimeException("Login to Kibana failed")
       }
     }

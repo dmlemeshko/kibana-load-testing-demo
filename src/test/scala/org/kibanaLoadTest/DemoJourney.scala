@@ -4,7 +4,7 @@ import io.gatling.core.Predef._
 import io.gatling.http.Predef._
 
 import scala.concurrent.duration.DurationInt
-import org.kibanaLoadTest.{Helper, HttpHelper, KibanaConfiguration}
+import org.kibanaLoadTest.{Helper, HttpHelper, KibanaConfiguration, Version}
 import java.util.Calendar
 
 class DemoJourney extends Simulation {
@@ -37,7 +37,6 @@ class DemoJourney extends Simulation {
     .acceptHeader("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
     .acceptEncodingHeader("gzip, deflate")
     .acceptLanguageHeader("en-GB,en-US;q=0.9,en;q=0.8")
-    //.upgradeInsecureRequestsHeader("1")
     .userAgentHeader("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36")
 
   var defaultHeaders = Map(
@@ -70,7 +69,7 @@ class DemoJourney extends Simulation {
         .headers(loginHeaders)
         .body(StringBody(appConfig.loginPayload)).asJson
         .check(headerRegex("set-cookie", ".+?(?=;)").saveAs("Cookie"))
-        .check(status.is(204)))
+        .check(status.is(appConfig.loginStatusCode)))
     }
     .exitHereIfFailed
     .exec(http("get bootstrap.js")
