@@ -13,10 +13,10 @@ class DemoJourney extends Simulation {
 
   println(s"Running Kibana ${env} config")
   val appConfig = new KibanaConfiguration(s"config/${env}.conf")
-  println(appConfig.baseUrl)
-  println(appConfig.buildVersion)
-  println(appConfig.isSecurityEnabled)
-  println(appConfig.loginPayload)
+  println(s"Base URL = ${appConfig.baseUrl}")
+  println(s"Kibana version = ${appConfig.buildVersion}")
+  println(s"Security Enabled = ${appConfig.isSecurityEnabled}")
+  println(s"Auth payload = ${appConfig.loginPayload}")
 
   val discoverPayload = Helper.loadJsonString("data/discoverPayload.json")
   val discoverPayloadQ1 = discoverPayload
@@ -72,21 +72,23 @@ class DemoJourney extends Simulation {
         .check(status.is(appConfig.loginStatusCode)))
     }
     .exitHereIfFailed
-    .exec(http("get bootstrap.js")
-      .get("/bundles/app/kibana/bootstrap.js")
-      .header("Cookie", "${Cookie}")
-      .header("if-none-match", "06cae6ce1935b763b9d86ecb9a6392dc1a6d5e5d-gzip")
-      .header("sec-fetch-dest", "script")
-      .header("sec-fetch-mode", "no-cors")
-      .header("sec-fetch-site", "same-origin")
-      .header("referer",  appConfig.baseUrl + "/app/kibana")
-      .check(regex("\\/(.*)',").findAll.saveAs("bundlesList")))
-      .pause(2 seconds)
-      .foreach("${bundlesList}", "bundle") {
-        exec(http("downloading bundle")
-          .get("/" + "${bundle}")
-          .header("Referer", appConfig.baseUrl +  "/app/kibana"))
-      }
+    .doIf(!appConfig.isAbove79x) {
+      exec(http("get bootstrap.js")
+        .get("/bundles/app/kibana/bootstrap.js")
+        .header("Cookie", "${Cookie}")
+        .header("if-none-match", "06cae6ce1935b763b9d86ecb9a6392dc1a6d5e5d-gzip")
+        .header("sec-fetch-dest", "script")
+        .header("sec-fetch-mode", "no-cors")
+        .header("sec-fetch-site", "same-origin")
+        .header("referer",  appConfig.baseUrl + "/app/kibana")
+        .check(regex("\\/(.*)',").findAll.saveAs("bundlesList")))
+        .pause(2 seconds)
+        .foreach("${bundlesList}", "bundle") {
+          exec(http("downloading bundle")
+            .get("/" + "${bundle}")
+            .header("Referer", appConfig.baseUrl +  "/app/kibana"))
+        }
+    }
     .exec(http("visit Home")
       .get("/app/home")
       .headers(defaultTextHeaders)

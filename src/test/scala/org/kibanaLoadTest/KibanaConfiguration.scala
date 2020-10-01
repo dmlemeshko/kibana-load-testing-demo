@@ -11,6 +11,7 @@ class KibanaConfiguration {
   var password = ""
   var loginPayload = ""
   var loginStatusCode = 200
+  var isAbove79x = false
 
   def this(configName: String) {
     this()
@@ -24,8 +25,8 @@ class KibanaConfiguration {
     this.password = Option(System.getenv("password")).getOrElse(config.getString("auth.password"))
     val newLoginPayload = s"""{"providerType":"${config.getString("auth.providerType")}","providerName":"${config.getString("auth.providerName")}","currentURL":"${this.baseUrl}/login","params":{"username":"${this.username}","password":"${this.password}"}}"""
     val oldLoginPayload = s"""{"username":"${this.username}","password":"${this.password}"}"""
-    this.loginPayload = if (new Version(this.buildVersion).isAbove79x) newLoginPayload else oldLoginPayload
-    this.loginStatusCode = if (new Version(this.buildVersion).isAbove79x)  200 else 204
-
+    this.isAbove79x = new Version(this.buildVersion).isAbove79x
+    this.loginPayload = if (this.isAbove79x) newLoginPayload else oldLoginPayload
+    this.loginStatusCode = if (this.isAbove79x)  200 else 204
   }
 }
