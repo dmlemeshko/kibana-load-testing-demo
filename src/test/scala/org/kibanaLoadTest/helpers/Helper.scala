@@ -1,8 +1,11 @@
-package org.kibanaLoadTest
+package org.kibanaLoadTest.helpers
 
+import java.io.File
+import java.nio.file.Paths
+import java.text.SimpleDateFormat
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
+import java.util.{Calendar, Date, TimeZone}
 
 import com.typesafe.config.ConfigFactory
 
@@ -10,13 +13,21 @@ import scala.io.Source
 
 object Helper {
 
-  def getDate(fieldNumber: Int, shift: Int): String = {
+  val dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+
+  def getDate(fieldNumber: Int, daysShift: Int): String = {
     val c: Calendar = Calendar.getInstance
-    c.add(fieldNumber, -7)
+    c.add(fieldNumber, daysShift)
     val dtf = DateTimeFormatter
-      .ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+      .ofPattern(dateFormat)
       .withZone(ZoneId.systemDefault())
     dtf.format(c.getTime().toInstant)
+  }
+
+  def convertDateToUTC(timestamp: Long): String = {
+    val sdf = new SimpleDateFormat(dateFormat)
+    sdf.setTimeZone(TimeZone.getTimeZone("UTC"))
+    sdf.format(new Date(timestamp))
   }
 
   def loadJsonString(filePath: String): String = {
@@ -38,4 +49,10 @@ object Helper {
     appConfig
   }
 
+  def getLastReportPath() :String = {
+    val targetPath = Paths.get("target").toAbsolutePath.normalize.toString
+    val dir: File = new File(targetPath + File.separator + "gatling")
+    val files: Array[File] = dir.listFiles
+    files.toList.filter(file => file.isDirectory).maxBy(file => file.lastModified()).getAbsolutePath
+  }
 }

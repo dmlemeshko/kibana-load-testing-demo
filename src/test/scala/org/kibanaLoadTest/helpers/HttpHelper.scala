@@ -1,22 +1,22 @@
-package org.kibanaLoadTest
+package org.kibanaLoadTest.helpers
 
 import org.apache.http.client.methods.{HttpDelete, HttpPost}
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.HttpClientBuilder
+import org.kibanaLoadTest.KibanaConfiguration
 
-class HttpHelper(appConfig: KibanaConfiguration){
-
-  private val httpClient = HttpClientBuilder.create.build
+class HttpHelper(appConfig: KibanaConfiguration) {
 
   val loginHeaders = Map(
     "Content-Type" -> "application/json",
     "kbn-xsrf" -> "xsrf"
   )
+  private val httpClient = HttpClientBuilder.create.build
 
   def loginIfNeeded(): HttpHelper = {
     if (appConfig.isSecurityEnabled) {
       val loginRequest = new HttpPost(appConfig.baseUrl + "/internal/security/login")
-      loginHeaders foreach {case (key, value) => loginRequest.addHeader(key, value)}
+      loginHeaders foreach { case (key, value) => loginRequest.addHeader(key, value) }
       loginRequest.setEntity(new StringEntity(appConfig.loginPayload))
       val loginResponse = httpClient.execute(loginRequest)
 
@@ -56,5 +56,4 @@ class HttpHelper(appConfig: KibanaConfiguration){
   def closeConnection(): Unit = {
     httpClient.close()
   }
-
 }

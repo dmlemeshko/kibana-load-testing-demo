@@ -1,10 +1,12 @@
-package org.kibanaLoadTest
+package org.kibanaLoadTest.helpers
 
 class Version(var version: String) extends Comparable[Version] {
   if (version == null) throw new IllegalArgumentException("Version can not be null")
   if (!version.matches("[0-9]+(\\.[0-9]+)*")) throw new IllegalArgumentException("Invalid version format")
 
-  final def get: String = this.version
+  def isAbove79x: Boolean = {
+    this.compareTo(new Version("7.10")) != -1
+  }
 
   override def compareTo(that: Version): Int = {
     if (that == null) return 1
@@ -22,7 +24,5 @@ class Version(var version: String) extends Comparable[Version] {
     0
   }
 
-  def isAbove79x: Boolean = {
-    this.compareTo(new Version("7.10")) != -1
-  }
+  final def get: String = this.version
 }

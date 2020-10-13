@@ -1,17 +1,21 @@
 package org.kibanaLoadTest
 
 import com.typesafe.config.ConfigFactory
+import org.kibanaLoadTest.helpers.Version
 
-class KibanaConfiguration {
+ class KibanaConfiguration {
 
   var baseUrl = ""
   var buildVersion = ""
-  var isSecurityEnabled = true
+  var isSecurityEnabled = false
   var username = ""
   var password = ""
   var loginPayload = ""
   var loginStatusCode = 200
-  var isAbove79x = false
+  var isAbove79x = true
+  var esHost = ""
+  var esPort  = 9200
+  var esScheme = ""
 
   def this(configName: String) {
     this()
@@ -27,6 +31,9 @@ class KibanaConfiguration {
     val oldLoginPayload = s"""{"username":"${this.username}","password":"${this.password}"}"""
     this.isAbove79x = new Version(this.buildVersion).isAbove79x
     this.loginPayload = if (this.isAbove79x) newLoginPayload else oldLoginPayload
-    this.loginStatusCode = if (this.isAbove79x)  200 else 204
+    this.loginStatusCode = if (this.isAbove79x) 200 else 204
+    this.esHost = config.getString("es.host")
+    this.esPort = config.getInt("es.port")
+    this.esScheme = config.getString("es.scheme")
   }
 }

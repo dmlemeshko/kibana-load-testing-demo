@@ -1,11 +1,15 @@
 package com.kibanaTest
 
+import java.io.File
+import java.util.Calendar
+
 import io.gatling.core.Predef._
 import io.gatling.http.Predef._
+import org.kibanaLoadTest.KibanaConfiguration
+import org.kibanaLoadTest.helpers.Helper.getLastReportPath
+import org.kibanaLoadTest.helpers.{ESWrapper, Helper, HttpHelper}
 
 import scala.concurrent.duration.DurationInt
-import org.kibanaLoadTest.{Helper, HttpHelper, KibanaConfiguration, Version}
-import java.util.Calendar
 
 class DemoJourney extends Simulation {
 
@@ -50,7 +54,7 @@ class DemoJourney extends Simulation {
     "Sec-Fetch-Dest" -> "empty"
   )
 
-  var defaultTextHeaders  = Map("Content-Type" -> "text/html; charset=utf-8")
+  var defaultTextHeaders = Map("Content-Type" -> "text/html; charset=utf-8")
 
   val loginHeaders = Map(
     "Content-Type" -> "application/json",
@@ -80,13 +84,13 @@ class DemoJourney extends Simulation {
         .header("sec-fetch-dest", "script")
         .header("sec-fetch-mode", "no-cors")
         .header("sec-fetch-site", "same-origin")
-        .header("referer",  appConfig.baseUrl + "/app/kibana")
+        .header("referer", appConfig.baseUrl + "/app/kibana")
         .check(regex("\\/(.*)',").findAll.saveAs("bundlesList")))
         .pause(2 seconds)
         .foreach("${bundlesList}", "bundle") {
           exec(http("downloading bundle")
             .get("/" + "${bundle}")
-            .header("Referer", appConfig.baseUrl +  "/app/kibana"))
+            .header("Referer", appConfig.baseUrl + "/app/kibana"))
         }
     }
     .exec(http("visit Home")
@@ -102,7 +106,7 @@ class DemoJourney extends Simulation {
       .post("/internal/search/es")
       .headers(defaultHeaders)
       .header("Referer", appConfig.baseUrl + "/app/discover")
-        .body(StringBody(discoverPayloadQ1)).asJson
+      .body(StringBody(discoverPayloadQ1)).asJson
       .check(status.is(200)))
     .pause(5 seconds)
     .exec(http("Discover query 2")
@@ -132,24 +136,24 @@ class DemoJourney extends Simulation {
       .header("Referer", appConfig.baseUrl + "/app/dashboards")
       .check(status.is(200))
       .check(jsonPath("$.saved_objects[?(@.type=='index-pattern')].id").saveAs("indexPatternId")))
-      .exitBlockOnFail {
-        exec(http("query dashboard list")
-          .get("/api/saved_objects/_find")
-          .queryParam("default_search_operator", "AND")
-          .queryParam("page", "1")
-          .queryParam("per_page", "1000")
-          .queryParam("search_fields", "title%5E3")
-          .queryParam("search_fields", "description")
-          .queryParam("type", "dashboard")
-          .headers(defaultHeaders)
-          .header("Referer", appConfig.baseUrl + "/app/dashboards")
-          .check(jsonPath("$.saved_objects[:1].id").saveAs("dashboardId"))
-          .check(status.is(200)))
-          .pause(2 seconds)
-          .exec(http("query panels list")
-            .post("/api/saved_objects/_bulk_get")
-            .body(StringBody(
-              """
+    .exitBlockOnFail {
+      exec(http("query dashboard list")
+        .get("/api/saved_objects/_find")
+        .queryParam("default_search_operator", "AND")
+        .queryParam("page", "1")
+        .queryParam("per_page", "1000")
+        .queryParam("search_fields", "title%5E3")
+        .queryParam("search_fields", "description")
+        .queryParam("type", "dashboard")
+        .headers(defaultHeaders)
+        .header("Referer", appConfig.baseUrl + "/app/dashboards")
+        .check(jsonPath("$.saved_objects[:1].id").saveAs("dashboardId"))
+        .check(status.is(200)))
+        .pause(2 seconds)
+        .exec(http("query panels list")
+          .post("/api/saved_objects/_bulk_get")
+          .body(StringBody(
+            """
           [
             {
               "id":"${dashboardId}",
@@ -157,103 +161,103 @@ class DemoJourney extends Simulation {
             }
           ]
         """
-            )).asJson
-            .headers(defaultHeaders)
-            .header("Referer", appConfig.baseUrl + "/app/dashboards")
-            .check(
-              jsonPath("$.saved_objects[0].references[?(@.type=='visualization')]")
-                .findAll
-                .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
-                .saveAs("vizVector"))
-            .check(
-              jsonPath("$.saved_objects[0].references[?(@.type=='map' || @.type=='search')]")
-                .findAll
-                .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
-                .saveAs("searchAndMapVector"))
-            .check(status.is(200)))
-          .exec(session =>
-            //convert Vector -> String
-            session.set("vizListString", session("vizVector").as[Seq[String]].mkString(",")))
-          .exec(session => {
-            //convert Vector -> String
-            session.set("searchAndMapString", session("searchAndMapVector").as[Seq[String]].mkString(","))
-          })
-          .exec(http("query visualizations")
-            .post("/api/saved_objects/_bulk_get")
-            .body(StringBody("[" +
-              "${vizListString}"
-                .concat(", { \"id\":\"${indexPatternId}\", \"type\":\"index-pattern\"  }]"))).asJson
-            .headers(defaultHeaders)
-            .header("Referer", appConfig.baseUrl + "/app/dashboards")
-            .check(status.is(200)))
-          .exec(http("query search & map")
-            .post("/api/saved_objects/_bulk_get")
-            .body(StringBody(
-              """[ ${searchAndMapString} ]""".stripMargin)).asJson
-            .headers(defaultHeaders)
-            .header("Referer", appConfig.baseUrl + "/app/dashboards")
-            .check(status.is(200)))
-          .exec(http("query timeseries data")
-            .post("/api/metrics/vis/data")
-            .body(ElFileBody("data/timeSeriesPayload.json")).asJson
-            .headers(defaultHeaders)
-            .header("Referer", appConfig.baseUrl + "/app/dashboards")
-            .check(status.is(200)))
-          .exec(http("query gauge data")
-            .post("/api/metrics/vis/data")
-            .body(ElFileBody("data/gaugePayload.json")).asJson
-            .headers(defaultHeaders)
-            .header("Referer", appConfig.baseUrl + "/app/dashboards")
-            .check(status.is(200)))
-      }
-//    .pause(10 seconds)
-//    .exec(http("canvas workpads")
-//      .get("/api/canvas/workpad/find")
-//      .queryParam("name", "")
-//      .queryParam("perPage", "10000")
-//      .headers(defaultHeaders)
-//      .header("Referer", appConfig.baseUrl + "/app/canvas")
-//      .check(status.is(200))
-//      .check()
-//      .check(jsonPath("$.workpads[0].id").saveAs("workpadId")))
-//    .exitBlockOnFail {
-//      exec(http("interpreter demo")
-//        .get("/api/interpreter/fns")
-//        .queryParam("name", "")
-//        .queryParam("perPage", "10000")
-//        .headers(defaultHeaders)
-//        .header("Referer", appConfig.baseUrl + "/app/canvas")
-//        .check(status.is(200)))
-//      .pause(5 seconds)
-//      .exec(http("load workpad")
-//        .get("/api/canvas/workpad/${workpadId}")
-//        .headers(defaultHeaders)
-//        .header("Referer", appConfig.baseUrl + "/app/canvas")
-//        .header("kbn-xsrf", "professionally-crafted-string-of-text")
-//        .check(status.is(200)))
-//        .pause(1 seconds)
-//        .exec(http("query canvas timelion")
-//          .post("/api/timelion/run")
-//          .body(ElFileBody("data/canvasTimelionPayload.json")).asJson
-//          .headers(defaultHeaders)
-//          .header("Referer", appConfig.baseUrl + "/app/canvas")
-//          .header("kbn-xsrf", "professionally-crafted-string-of-text")
-//          .check(status.is(200)))
-//        .pause(1 seconds)
-//        .exec(http("query canvas aggs 1")
-//          .post("/api/interpreter/fns")
-//          .body(ElFileBody("data/canvasInterpreterPayload1.json")).asJson
-//          .headers(defaultHeaders)
-//          .header("Referer", appConfig.baseUrl + "/app/canvas")
-//          .check(status.is(200)))
-//        .pause(1 seconds)
-//        .exec(http("query canvas aggs 2")
-//          .post("/api/interpreter/fns")
-//          .body(ElFileBody("data/canvasInterpreterPayload2.json")).asJson
-//          .headers(defaultHeaders)
-//          .header("Referer", appConfig.baseUrl + "/app/canvas")
-//          .check(status.is(200)))
-//    }
+          )).asJson
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(
+            jsonPath("$.saved_objects[0].references[?(@.type=='visualization')]")
+              .findAll
+              .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
+              .saveAs("vizVector"))
+          .check(
+            jsonPath("$.saved_objects[0].references[?(@.type=='map' || @.type=='search')]")
+              .findAll
+              .transform(_.map(_.replaceAll("\"name(.+?),", ""))) //remove name attribute
+              .saveAs("searchAndMapVector"))
+          .check(status.is(200)))
+        .exec(session =>
+          //convert Vector -> String
+          session.set("vizListString", session("vizVector").as[Seq[String]].mkString(",")))
+        .exec(session => {
+          //convert Vector -> String
+          session.set("searchAndMapString", session("searchAndMapVector").as[Seq[String]].mkString(","))
+        })
+        .exec(http("query visualizations")
+          .post("/api/saved_objects/_bulk_get")
+          .body(StringBody("[" +
+            "${vizListString}"
+              .concat(", { \"id\":\"${indexPatternId}\", \"type\":\"index-pattern\"  }]"))).asJson
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(status.is(200)))
+        .exec(http("query search & map")
+          .post("/api/saved_objects/_bulk_get")
+          .body(StringBody(
+            """[ ${searchAndMapString} ]""".stripMargin)).asJson
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(status.is(200)))
+        .exec(http("query timeseries data")
+          .post("/api/metrics/vis/data")
+          .body(ElFileBody("data/timeSeriesPayload.json")).asJson
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(status.is(200)))
+        .exec(http("query gauge data")
+          .post("/api/metrics/vis/data")
+          .body(ElFileBody("data/gaugePayload.json")).asJson
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/dashboards")
+          .check(status.is(200)))
+    }
+  //    .pause(10 seconds)
+  //    .exec(http("canvas workpads")
+  //      .get("/api/canvas/workpad/find")
+  //      .queryParam("name", "")
+  //      .queryParam("perPage", "10000")
+  //      .headers(defaultHeaders)
+  //      .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //      .check(status.is(200))
+  //      .check()
+  //      .check(jsonPath("$.workpads[0].id").saveAs("workpadId")))
+  //    .exitBlockOnFail {
+  //      exec(http("interpreter demo")
+  //        .get("/api/interpreter/fns")
+  //        .queryParam("name", "")
+  //        .queryParam("perPage", "10000")
+  //        .headers(defaultHeaders)
+  //        .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //        .check(status.is(200)))
+  //      .pause(5 seconds)
+  //      .exec(http("load workpad")
+  //        .get("/api/canvas/workpad/${workpadId}")
+  //        .headers(defaultHeaders)
+  //        .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //        .header("kbn-xsrf", "professionally-crafted-string-of-text")
+  //        .check(status.is(200)))
+  //        .pause(1 seconds)
+  //        .exec(http("query canvas timelion")
+  //          .post("/api/timelion/run")
+  //          .body(ElFileBody("data/canvasTimelionPayload.json")).asJson
+  //          .headers(defaultHeaders)
+  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //          .header("kbn-xsrf", "professionally-crafted-string-of-text")
+  //          .check(status.is(200)))
+  //        .pause(1 seconds)
+  //        .exec(http("query canvas aggs 1")
+  //          .post("/api/interpreter/fns")
+  //          .body(ElFileBody("data/canvasInterpreterPayload1.json")).asJson
+  //          .headers(defaultHeaders)
+  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //          .check(status.is(200)))
+  //        .pause(1 seconds)
+  //        .exec(http("query canvas aggs 2")
+  //          .post("/api/interpreter/fns")
+  //          .body(ElFileBody("data/canvasInterpreterPayload2.json")).asJson
+  //          .headers(defaultHeaders)
+  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
+  //          .check(status.is(200)))
+  //    }
 
   before {
     // load sample data
@@ -271,7 +275,15 @@ class DemoJourney extends Simulation {
         .removeSampleData("ecommerce")
         .closeConnection()
     } catch {
-      case e: java.lang.RuntimeException => println(s"Can't remove sample data\n ${e.printStackTrace()}" )
+      case e: java.lang.RuntimeException => println(s"Can't remove sample data\n ${e.printStackTrace()}")
+    }
+
+    // ingest results to ES instance
+    val ingest:Boolean = Option(System.getenv("ingest")).getOrElse("false").toBoolean
+    if (ingest) {
+      val logFilePath = getLastReportPath() + File.separator + "simulation.log"
+      val esWrapper = new ESWrapper(appConfig)
+      esWrapper.ingest(logFilePath)
     }
   }
 
