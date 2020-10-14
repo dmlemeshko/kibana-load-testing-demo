@@ -14,7 +14,7 @@ import org.kibanaLoadTest.KibanaConfiguration
 
 class ESWrapper(config: KibanaConfiguration) {
 
-  def ingest(logFilePath: String): Unit = {
+  def ingest(logFilePath: String, scenario: String): Unit = {
     val requests = LogParser.getRequests(logFilePath)
 
     val credentialsProvider = new BasicCredentialsProvider
@@ -26,8 +26,12 @@ class ESWrapper(config: KibanaConfiguration) {
     val builder = RestClient.builder(
       new HttpHost(config.esHost, config.esPort, config.esScheme)
     ).setHttpClientConfigCallback(
-      (httpClientBuilder: HttpAsyncClientBuilder) => httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider)
-    )
+      (httpClientBuilder: HttpAsyncClientBuilder) =>
+        httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider)
+    ).setRequestConfigCallback(requestConfigBuilder => requestConfigBuilder
+      .setConnectTimeout(30000)
+      .setConnectionRequestTimeout(90000)
+      .setSocketTimeout(90000))
 
     val client = new RestHighLevelClient(builder)
     val timestamp = Helper.convertDateToUTC(Instant.now.toEpochMilli)
@@ -37,13 +41,17 @@ class ESWrapper(config: KibanaConfiguration) {
         s"""
           |{
           | "timestamp": "${timestamp}",
-          | "userId": "${request.userId}",
+          | "userId": ${request.userId},
           | "name": "${request.name}",
           | "requestSendStartTime": "${Helper.convertDateToUTC(request.requestSendStartTime)}",
           | "responseReceiveEndTime": "${Helper.convertDateToUTC(request.responseReceiveEndTime)}",
           | "status": "${request.status}",
-          | "requestTime": "${request.requestTime}",
-          | "message": "${request.message}"
+          | "requestTime": ${request.requestTime},
+          | "message": "${request.message}",
+          | "version": "${config.buildVersion}",
+          | "baseUrl": "${config.baseUrl}",
+          | "securityEnabled": "${config.isSecurityEnabled}",
+          | "scenario": "${scenario}"
           |}
       """.stripMargin
 

@@ -66,7 +66,9 @@ class DemoJourney extends Simulation {
     defaultTextHeaders += ("Cookie" -> "${Cookie}")
   }
 
-  val scn = scenario(s"Kibana ${appConfig.buildVersion} ${env}")
+  val scenarioName = s"Kibana demo journey ${appConfig.buildVersion} ${env}"
+
+  val scn = scenario(scenarioName)
     .doIf(appConfig.isSecurityEnabled) {
       exec(http("login")
         .post("/internal/security/login")
@@ -76,32 +78,7 @@ class DemoJourney extends Simulation {
         .check(status.is(appConfig.loginStatusCode)))
     }
     .exitHereIfFailed
-    .doIf(!appConfig.isAbove79x) {
-      exec(http("get bootstrap.js")
-        .get("/bundles/app/kibana/bootstrap.js")
-        .header("Cookie", "${Cookie}")
-        .header("if-none-match", "06cae6ce1935b763b9d86ecb9a6392dc1a6d5e5d-gzip")
-        .header("sec-fetch-dest", "script")
-        .header("sec-fetch-mode", "no-cors")
-        .header("sec-fetch-site", "same-origin")
-        .header("referer", appConfig.baseUrl + "/app/kibana")
-        .check(regex("\\/(.*)',").findAll.saveAs("bundlesList")))
-        .pause(2 seconds)
-        .foreach("${bundlesList}", "bundle") {
-          exec(http("downloading bundle")
-            .get("/" + "${bundle}")
-            .header("Referer", appConfig.baseUrl + "/app/kibana"))
-        }
-    }
-    .exec(http("visit Home")
-      .get("/app/home")
-      .headers(defaultTextHeaders)
-      .check(status.is(200)))
     .pause(5 seconds)
-    .exec(http("visit Discover")
-      .get("/app/discover")
-      .headers(defaultTextHeaders)
-      .check(status.is(200)))
     .exec(http("Discover query 1")
       .post("/internal/search/es")
       .headers(defaultHeaders)
@@ -123,10 +100,6 @@ class DemoJourney extends Simulation {
       .body(StringBody(discoverPayloadQ3)).asJson
       .check(status.is(200)))
     .pause(10 seconds)
-    .exec(http("visit Dashboards")
-      .get("/app/dashboards")
-      .headers(defaultTextHeaders)
-      .check(status.is(200)))
     .exec(http("query indexPattern")
       .get("/api/saved_objects/_find")
       .queryParam("fields", "title")
@@ -210,54 +183,54 @@ class DemoJourney extends Simulation {
           .header("Referer", appConfig.baseUrl + "/app/dashboards")
           .check(status.is(200)))
     }
-  //    .pause(10 seconds)
-  //    .exec(http("canvas workpads")
-  //      .get("/api/canvas/workpad/find")
-  //      .queryParam("name", "")
-  //      .queryParam("perPage", "10000")
-  //      .headers(defaultHeaders)
-  //      .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //      .check(status.is(200))
-  //      .check()
-  //      .check(jsonPath("$.workpads[0].id").saveAs("workpadId")))
-  //    .exitBlockOnFail {
-  //      exec(http("interpreter demo")
-  //        .get("/api/interpreter/fns")
-  //        .queryParam("name", "")
-  //        .queryParam("perPage", "10000")
-  //        .headers(defaultHeaders)
-  //        .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //        .check(status.is(200)))
-  //      .pause(5 seconds)
-  //      .exec(http("load workpad")
-  //        .get("/api/canvas/workpad/${workpadId}")
-  //        .headers(defaultHeaders)
-  //        .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //        .header("kbn-xsrf", "professionally-crafted-string-of-text")
-  //        .check(status.is(200)))
-  //        .pause(1 seconds)
-  //        .exec(http("query canvas timelion")
-  //          .post("/api/timelion/run")
-  //          .body(ElFileBody("data/canvasTimelionPayload.json")).asJson
-  //          .headers(defaultHeaders)
-  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //          .header("kbn-xsrf", "professionally-crafted-string-of-text")
-  //          .check(status.is(200)))
-  //        .pause(1 seconds)
-  //        .exec(http("query canvas aggs 1")
-  //          .post("/api/interpreter/fns")
-  //          .body(ElFileBody("data/canvasInterpreterPayload1.json")).asJson
-  //          .headers(defaultHeaders)
-  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //          .check(status.is(200)))
-  //        .pause(1 seconds)
-  //        .exec(http("query canvas aggs 2")
-  //          .post("/api/interpreter/fns")
-  //          .body(ElFileBody("data/canvasInterpreterPayload2.json")).asJson
-  //          .headers(defaultHeaders)
-  //          .header("Referer", appConfig.baseUrl + "/app/canvas")
-  //          .check(status.is(200)))
-  //    }
+      .pause(10 seconds)
+      .exec(http("canvas workpads")
+        .get("/api/canvas/workpad/find")
+        .queryParam("name", "")
+        .queryParam("perPage", "10000")
+        .headers(defaultHeaders)
+        .header("Referer", appConfig.baseUrl + "/app/canvas")
+        .check(status.is(200))
+        .check()
+        .check(jsonPath("$.workpads[0].id").saveAs("workpadId")))
+      .exitBlockOnFail {
+        exec(http("interpreter demo")
+          .get("/api/interpreter/fns")
+          .queryParam("name", "")
+          .queryParam("perPage", "10000")
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/canvas")
+          .check(status.is(200)))
+        .pause(5 seconds)
+        .exec(http("load workpad")
+          .get("/api/canvas/workpad/${workpadId}")
+          .headers(defaultHeaders)
+          .header("Referer", appConfig.baseUrl + "/app/canvas")
+          .header("kbn-xsrf", "professionally-crafted-string-of-text")
+          .check(status.is(200)))
+          .pause(1 seconds)
+          .exec(http("query canvas timelion")
+            .post("/api/timelion/run")
+            .body(ElFileBody("data/canvasTimelionPayload.json")).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/canvas")
+            .header("kbn-xsrf", "professionally-crafted-string-of-text")
+            .check(status.is(200)))
+          .pause(1 seconds)
+          .exec(http("query canvas aggs 1")
+            .post("/api/interpreter/fns")
+            .body(ElFileBody("data/canvasInterpreterPayload1.json")).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/canvas")
+            .check(status.is(200)))
+          .pause(1 seconds)
+          .exec(http("query canvas aggs 2")
+            .post("/api/interpreter/fns")
+            .body(ElFileBody("data/canvasInterpreterPayload2.json")).asJson
+            .headers(defaultHeaders)
+            .header("Referer", appConfig.baseUrl + "/app/canvas")
+            .check(status.is(200)))
+      }
 
   before {
     // load sample data
@@ -283,7 +256,7 @@ class DemoJourney extends Simulation {
     if (ingest) {
       val logFilePath = getLastReportPath() + File.separator + "simulation.log"
       val esWrapper = new ESWrapper(appConfig)
-      esWrapper.ingest(logFilePath)
+      esWrapper.ingest(logFilePath, scenarioName)
     }
   }
 
